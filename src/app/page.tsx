@@ -68,38 +68,36 @@ export default function Home() {
     const clean = value.trim();
     if (!clean || saving) return;
     setSaving(true);
-    setNotice("Saving your plan…");
-    const { data, error } = await supabase
-      .from("workflows")
-      .insert({
-        workspace_id: workspaceId,
-        name: clean.slice(0, 160),
-        description: "Draft created · review the plan before execution",
-        definition: {
-          version: 1,
-          source: "workspace_prompt",
-          prompt: clean,
-          steps: [],
-          execution_requires_approval: true
+    setNotice("ORBIT is breaking your request into safe steps…");
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        throw new Error("Your session expired. Please sign in again.");
+      }
+      const response = await fetch("/api/workflows/plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`
         },
-        status: "draft"
-      })
-      .select("id,name,status,description")
-      .single();
-
-    if (error) {
-      setNotice("Save failed: " + error.message);
-    } else if (data) {
+        body: JSON.stringify({ prompt: clean, workspaceId })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Plan generation failed.");
+      const data = result.workflow;
       setRuns((current) => [{
         id: data.id,
         title: data.name,
         status: "Draft",
-        detail: data.description || "Saved to your private workspace"
+        detail: `${result.steps.length} planning steps completed · run ${result.run.id.slice(0, 8)}`
       }, ...current]);
-      setNotice("Plan saved to Supabase. No external action has been executed.");
+      setNotice("Plan generated and recorded. This is a rule-based planning run, not completion of the requested real-world task. External actions remain disabled.");
       setPrompt("");
+    } catch (cause) {
+      setNotice("Planning failed: " + (cause instanceof Error ? cause.message : "Unknown error"));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   return (
@@ -149,7 +147,7 @@ export default function Home() {
             </div>
 
             <div className="rounded-3xl border border-indigo-200/20 bg-[#11182a]/90 p-3 shadow-glow sm:p-4">
-              <div className="mb-3 flex items-center justify-between px-2 pt-1"><span className="text-xs font-medium text-slate-300">What would you like to get done?</span><span className="text-[10px] text-slate-600">ENTER TO SAVE A DRAFT</span></div>
+              <div className="mb-3 flex items-center justify-between px-2 pt-1"><span className="text-xs font-medium text-slate-300">What would you like to get done?</span><span className="text-[10px] text-slate-600">ENTER TO GENERATE A SAFE PLAN</span></div>
               <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createRun(); } }} placeholder="e.g. Research a topic, compare options, and prepare a decision brief..." className="min-h-28 w-full resize-y bg-transparent px-2 py-2 text-sm leading-6 text-white outline-none placeholder:text-slate-600"/>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[.07] px-2 pt-3"><div className="flex items-center gap-2 text-[11px] text-slate-500"><ShieldCheck size={14} className="text-cyan-300"/> Nothing external runs without approval</div><button onClick={() => createRun()} disabled={!prompt.trim() || saving} className="inline-flex items-center gap-2 rounded-xl bg-indigo-300 px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-indigo-200 disabled:cursor-not-allowed disabled:opacity-40">{saving ? <LoaderCircle size={14} className="animate-spin"/> : null}Save plan <Send size={14}/></button></div>
             </div>
@@ -173,7 +171,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[.02] p-4"><CircleHelp size={17} className="mt-0.5 shrink-0 text-slate-500"/><div><div className="text-xs font-medium text-slate-300">Workspace status</div><p className="mt-1 text-xs leading-5 text-slate-500">{notice} Drafts are stored in Supabase. Workflow execution and AI planning are not enabled yet.</p></div></div>
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[.02] p-4"><CircleHelp size={17} className="mt-0.5 shrink-0 text-slate-500"/><div><div className="text-xs font-medium text-slate-300">Workspace status</div><p className="mt-1 text-xs leading-5 text-slate-500">{notice} Plans and planning-run evidence are stored in Supabase. The current planner is rule-based; LLM reasoning and external integrations are not connected yet.</p></div></div>
             <footer className="flex flex-wrap items-center justify-between gap-2 py-8 text-[10px] text-slate-600"><span>ORBIT AI · BUILDING WITH CONTROL</span><span className="inline-flex items-center gap-1">Designed for accountable automation <ArrowUpRight size={11}/></span></footer>
           </div>
         </section>
