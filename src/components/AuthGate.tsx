@@ -25,6 +25,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [workspaceId, setWorkspaceId] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +49,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function prepareWorkspace() {
-      if (!supabase || !session?.user) {
+      const client = supabase;
+      if (!client || !session?.user) {
         setWorkspaceId("");
         setReady(true);
         return;
@@ -61,7 +63,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         currentUser.email?.split("@")[0] ||
         "ORBIT User";
 
-      const profile = await supabase.from("profiles").upsert({
+      const profile = await client.from("profiles").upsert({
         id: currentUser.id,
         display_name: nameFromAccount
       }, { onConflict: "id" });
@@ -73,7 +75,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         return;
       }
 
-      const existing = await supabase
+      const existing = await client
         .from("workspaces")
         .select("id")
         .eq("owner_id", currentUser.id)
@@ -91,7 +93,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       let id = existing.data?.id as string | undefined;
       if (!id) {
-        const created = await supabase
+        const created = await client
           .from("workspaces")
           .insert({ name: "My workspace", owner_id: currentUser.id })
           .select("id")
@@ -105,18 +107,42 @@ export function AuthGate({ children }: { children: ReactNode }) {
         }
         id = created.data.id;
       }
-
-      const membership = await supabase.from("workspace_members").upsert({
-        workspace_id: id,
-        user_id: currentUser.id,
-        role: "owner"
-      }, { onConflict: "workspace_id,user_id" });
-      if (membership.error) {
+      if (!id) {
         if (!cancelled) {
-          setError("Workspace membership setup failed: " + membership.error.message);
+          setError("Workspace ID was not returned by the database.");
           setReady(true);
         }
         return;
+      }
+
+      const existingMembership = await client
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", id)
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      if (existingMembership.error) {
+        if (!cancelled) {
+          setError("Workspace membership lookup failed: " + existingMembership.error.message);
+          setReady(true);
+        }
+        return;
+      }
+
+      if (!existingMembership.data) {
+        const membership = await client.from("workspace_members").insert({
+          workspace_id: id,
+          user_id: currentUser.id,
+          role: "owner"
+        });
+        if (membership.error) {
+          if (!cancelled) {
+            setError("Workspace membership setup failed: " + membership.error.message);
+            setReady(true);
+          }
+          return;
+        }
       }
       if (!cancelled) {
         setWorkspaceId(id);
@@ -125,15 +151,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     prepareWorkspace();
     return () => { cancelled = true; };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, retryKey]);
 
   const value = useMemo(() => {
-    if (!supabase || !session?.user || !workspaceId) return null;
+    const client = supabase;
+    if (!client || !session?.user || !workspaceId) return null;
     return {
       user: session.user,
       workspaceId,
-      supabase,
-      signOut: async () => { await supabase.auth.signOut(); }
+      supabase: client,
+      signOut: async () => { await client.auth.signOut(); }
     };
   }, [session?.user?.id, workspaceId]);
 
@@ -190,7 +217,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <LoaderCircle className="mx-auto mb-4 animate-spin text-indigo-200" size={30}/>
           <p className="text-sm text-slate-300">Preparing your private ORBIT workspace…</p>
           {error && <p className="mt-3 max-w-md text-sm text-rose-300">{error}</p>}
-          {error && <button onClick={() => setSession({ ...session })} className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-xs">Retry</button>}
+          {error && <button onClick={() => setRetryKey((value) => value + 1)} className="mt-4 rounded-xl border border-white/10 px-4 py-2 text-xs">Retry</button>}
         </div>
       </main>
     );

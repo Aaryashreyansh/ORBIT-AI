@@ -73,7 +73,7 @@ export default function Home() {
       .from("workflows")
       .insert({
         workspace_id: workspaceId,
-        name: clean.slice(0, 180),
+        name: clean.slice(0, 160),
         description: "Draft created · review the plan before execution",
         definition: {
           version: 1,
