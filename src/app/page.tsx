@@ -30,6 +30,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [latestPlan, setLatestPlan] = useState<{ objective: string; intent: string; summary: string; steps: Array<{ title: string; description: string; step_type: string }>; provider: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -85,13 +86,14 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Plan generation failed.");
       const data = result.workflow;
+      setLatestPlan({ ...result.plan, provider: result.engine?.provider || "local_fallback" });
       setRuns((current) => [{
         id: data.id,
         title: data.name,
         status: "Draft",
         detail: `${result.steps.length} planning steps completed · run ${result.run.id.slice(0, 8)}`
       }, ...current]);
-      setNotice("Plan generated and recorded. This is a rule-based planning run, not completion of the requested real-world task. External actions remain disabled.");
+      setNotice(result.engine?.provider === "openai" ? "AI-generated plan saved with its execution passport. Real-world actions were not performed." : "Fallback plan saved. The OpenAI key is not configured in the server yet. External actions remain disabled.");
       setPrompt("");
     } catch (cause) {
       setNotice("Planning failed: " + (cause instanceof Error ? cause.message : "Unknown error"));
@@ -147,12 +149,14 @@ export default function Home() {
             </div>
 
             <div className="rounded-3xl border border-indigo-200/20 bg-[#11182a]/90 p-3 shadow-glow sm:p-4">
-              <div className="mb-3 flex items-center justify-between px-2 pt-1"><span className="text-xs font-medium text-slate-300">What would you like to get done?</span><span className="text-[10px] text-slate-600">ENTER TO GENERATE A SAFE PLAN</span></div>
+              <div className="mb-3 flex items-center justify-between px-2 pt-1"><span className="text-xs font-medium text-slate-300">What would you like to get done?</span><span className="text-[10px] text-slate-600">ENTER TO GENERATE AN AI PLAN</span></div>
               <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); createRun(); } }} placeholder="e.g. Research a topic, compare options, and prepare a decision brief..." className="min-h-28 w-full resize-y bg-transparent px-2 py-2 text-sm leading-6 text-white outline-none placeholder:text-slate-600"/>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[.07] px-2 pt-3"><div className="flex items-center gap-2 text-[11px] text-slate-500"><ShieldCheck size={14} className="text-cyan-300"/> Nothing external runs without approval</div><button onClick={() => createRun()} disabled={!prompt.trim() || saving} className="inline-flex items-center gap-2 rounded-xl bg-indigo-300 px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-indigo-200 disabled:cursor-not-allowed disabled:opacity-40">{saving ? <LoaderCircle size={14} className="animate-spin"/> : null}Save plan <Send size={14}/></button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[.07] px-2 pt-3"><div className="flex items-center gap-2 text-[11px] text-slate-500"><ShieldCheck size={14} className="text-cyan-300"/> Nothing external runs without approval</div><button onClick={() => createRun()} disabled={!prompt.trim() || saving} className="inline-flex items-center gap-2 rounded-xl bg-indigo-300 px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-indigo-200 disabled:cursor-not-allowed disabled:opacity-40">{saving ? <LoaderCircle size={14} className="animate-spin"/> : null}Generate plan <Send size={14}/></button></div>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">{suggestions.map((item) => <button key={item} onClick={() => createRun(item)} disabled={saving} className="rounded-full border border-white/10 px-3 py-2 text-[11px] text-slate-400 transition hover:border-indigo-200/30 hover:text-indigo-100 disabled:opacity-40">{item}</button>)}</div>
+
+            {latestPlan && <div className="mt-6 rounded-2xl border border-indigo-200/20 bg-indigo-300/[.04] p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs font-semibold uppercase tracking-[.18em] text-indigo-200">Latest plan</div><span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-slate-300">{latestPlan.provider === "openai" ? "OpenAI AI Brain" : "Local fallback planner"}</span></div><h2 className="mt-3 text-lg font-semibold text-white">{latestPlan.objective}</h2><p className="mt-2 text-sm leading-6 text-slate-400">{latestPlan.summary}</p><ol className="mt-4 space-y-3">{latestPlan.steps.map((step, index) => <li key={`${step.title}-${index}`} className="flex gap-3"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-indigo-300/10 text-[11px] text-indigo-200">{index + 1}</span><div><div className="text-sm font-medium text-slate-200">{step.title}</div><p className="mt-1 text-xs leading-5 text-slate-500">{step.description}</p></div></li>)}</ol><p className="mt-4 border-t border-white/10 pt-3 text-[10px] leading-5 text-slate-500">Planning evidence only. ORBIT has not completed the real-world task. External actions remain disabled pending approval and integrations.</p></div>}
 
             <div className="mt-12 grid gap-4 sm:grid-cols-3">
               {[
@@ -171,7 +175,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[.02] p-4"><CircleHelp size={17} className="mt-0.5 shrink-0 text-slate-500"/><div><div className="text-xs font-medium text-slate-300">Workspace status</div><p className="mt-1 text-xs leading-5 text-slate-500">{notice} Plans and planning-run evidence are stored in Supabase. The current planner is rule-based; LLM reasoning and external integrations are not connected yet.</p></div></div>
+            <div className="mt-8 flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[.02] p-4"><CircleHelp size={17} className="mt-0.5 shrink-0 text-slate-500"/><div><div className="text-xs font-medium text-slate-300">Workspace status</div><p className="mt-1 text-xs leading-5 text-slate-500">{notice} Plans and planning-run evidence are stored in Supabase. AI planning uses the server-side OpenAI key when configured; otherwise ORBIT uses a local fallback planner. External integrations and real-world execution are not enabled yet.</p></div></div>
             <footer className="flex flex-wrap items-center justify-between gap-2 py-8 text-[10px] text-slate-600"><span>ORBIT AI · BUILDING WITH CONTROL</span><span className="inline-flex items-center gap-1">Designed for accountable automation <ArrowUpRight size={11}/></span></footer>
           </div>
         </section>
