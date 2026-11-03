@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html { min-height: 100%; background: #080b14; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #edf2ff;
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(74, 91, 180, .18), transparent 38%),
+    radial-gradient(ellipse at 90% 15%, rgba(34, 211, 238, .08), transparent 32%),
+    #080b14;
+  font-family: Arial, Helvetica, sans-serif;
+}
+button, input { font: inherit; }
+::selection { background: rgba(139, 156, 255, .35); }
